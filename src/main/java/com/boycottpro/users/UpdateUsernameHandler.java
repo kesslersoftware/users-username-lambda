@@ -5,6 +5,7 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 
+import com.boycottpro.models.ResponseMessage;
 import com.boycottpro.users.models.UserForm;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,27 +35,59 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
             UserForm input = objectMapper.readValue(event.getBody(), UserForm.class);
             String userId = input.getUser_id();
             if (userId == null || userId.isEmpty()) {
+                ResponseMessage message = new ResponseMessage(400,
+                        "sorry, there was an error processing your request",
+                        "user_id not present");
+                String responseBody = objectMapper.writeValueAsString(message);
                 return new APIGatewayProxyResponseEvent()
                         .withStatusCode(400)
                         .withHeaders(Map.of("Content-Type", "application/json"))
-                        .withBody("no user_id is given");
+                        .withBody(responseBody);
             }
             if(!checkOldUsername(userId, input.getOldUsername())) {
+                ResponseMessage message = new ResponseMessage(400,
+                        "sorry, there was an error processing your request",
+                        "old username is not valid");
+                String responseBody = objectMapper.writeValueAsString(message);
                 return new APIGatewayProxyResponseEvent()
                         .withStatusCode(400)
                         .withHeaders(Map.of("Content-Type", "application/json"))
-                        .withBody("old username is not valid");
+                        .withBody(responseBody);
             }
             boolean success = changeUsername(userId,input.getNewUsername());
-            String responseBody = objectMapper.writeValueAsString(success);
-            return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(200)
-                    .withHeaders(Map.of("Content-Type", "application/json"))
-                    .withBody("username changed = " + responseBody);
+            if(success) {
+                ResponseMessage message = new ResponseMessage(200,"username successfully changed!",
+                        "no issues changing username");
+                String responseBody = objectMapper.writeValueAsString(message);
+                return new APIGatewayProxyResponseEvent()
+                        .withStatusCode(200)
+                        .withHeaders(Map.of("Content-Type", "application/json"))
+                        .withBody(responseBody);
+            } else {
+                ResponseMessage message = new ResponseMessage(500,
+                        "sorry, there was an error processing your request",
+                        "unknown issue when trying to change username");
+                String responseBody = objectMapper.writeValueAsString(message);
+                return new APIGatewayProxyResponseEvent()
+                        .withStatusCode(500)
+                        .withHeaders(Map.of("Content-Type", "application/json"))
+                        .withBody(responseBody);
+            }
+
         } catch (Exception e) {
+            ResponseMessage message = new ResponseMessage(500,
+                    "sorry, there was an error processing your request",
+                    "Unexpected server error: " + e.getMessage());
+            String responseBody = null;
+            try {
+                responseBody = objectMapper.writeValueAsString(message);
+            } catch (JsonProcessingException ex) {
+                throw new RuntimeException(ex);
+            }
             return new APIGatewayProxyResponseEvent()
                     .withStatusCode(500)
-                    .withBody("{\"error\": \"Unexpected server error: " + e.getMessage() + "\"}");
+                    .withHeaders(Map.of("Content-Type", "application/json"))
+                    .withBody(responseBody);
         }
     }
 

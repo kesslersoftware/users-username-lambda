@@ -3,6 +3,7 @@ package com.boycottpro.users;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
+import com.boycottpro.models.ResponseMessage;
 import com.boycottpro.users.models.UserForm;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +59,8 @@ public class UpdateUsernameHandlerTest {
         APIGatewayProxyResponseEvent result = handler.handleRequest(request, context);
 
         assertEquals(200, result.getStatusCode());
-        assertEquals("username changed = true", result.getBody());
+        ResponseMessage message = objectMapper.readValue(result.getBody(), ResponseMessage.class);
+        assertEquals("username successfully changed!", message.getMessage());
     }
 
     @Test
@@ -82,7 +84,8 @@ public class UpdateUsernameHandlerTest {
         APIGatewayProxyResponseEvent result = handler.handleRequest(request, context);
 
         assertEquals(400, result.getStatusCode());
-        assertEquals("old username is not valid", result.getBody());
+        ResponseMessage message = objectMapper.readValue(result.getBody(), ResponseMessage.class);
+        assertEquals("sorry, there was an error processing your request", message.getMessage());
     }
 
     @Test
@@ -97,6 +100,7 @@ public class UpdateUsernameHandlerTest {
         APIGatewayProxyResponseEvent result = handler.handleRequest(request, context);
 
         assertEquals(400, result.getStatusCode());
-        assertEquals("no user_id is given", result.getBody());
+        ResponseMessage message = objectMapper.readValue(result.getBody(), ResponseMessage.class);
+        assertEquals("sorry, there was an error processing your request", message.getMessage());
     }
 }
