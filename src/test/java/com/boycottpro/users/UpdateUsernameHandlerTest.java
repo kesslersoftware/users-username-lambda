@@ -15,9 +15,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -42,12 +44,22 @@ public class UpdateUsernameHandlerTest {
         String newUsername = "new_name";
 
         UserForm form = new UserForm();
-        form.setUser_id(userId);
+        form.setUser_id(null);
         form.setOldUsername(oldUsername);
         form.setNewUsername(newUsername);
 
-        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
-        request.setBody(objectMapper.writeValueAsString(form));
+        APIGatewayProxyRequestEvent event = new APIGatewayProxyRequestEvent();
+        Map<String, String> claims = Map.of("sub", "11111111-2222-3333-4444-555555555555");
+        Map<String, Object> authorizer = new HashMap<>();
+        authorizer.put("claims", claims);
+
+        APIGatewayProxyRequestEvent.ProxyRequestContext rc = new APIGatewayProxyRequestEvent.ProxyRequestContext();
+        rc.setAuthorizer(authorizer);
+        event.setRequestContext(rc);
+
+        // Path param "s" since client calls /users/s
+        event.setPathParameters(Map.of("user_id", "s"));
+        event.setBody(objectMapper.writeValueAsString(form));
 
         Map<String, AttributeValue> userItem = Map.of("username", AttributeValue.fromS(oldUsername));
         GetItemResponse getResponse = GetItemResponse.builder().item(userItem).build();
@@ -56,7 +68,7 @@ public class UpdateUsernameHandlerTest {
         UpdateItemResponse updateResponse = UpdateItemResponse.builder().build();
         when(dynamoDb.updateItem(any(UpdateItemRequest.class))).thenReturn(updateResponse);
 
-        APIGatewayProxyResponseEvent result = handler.handleRequest(request, context);
+        APIGatewayProxyResponseEvent result = handler.handleRequest(event, context);
 
         assertEquals(200, result.getStatusCode());
         ResponseMessage message = objectMapper.readValue(result.getBody(), ResponseMessage.class);
@@ -70,18 +82,28 @@ public class UpdateUsernameHandlerTest {
         String newUsername = "new_name";
 
         UserForm form = new UserForm();
-        form.setUser_id(userId);
+        form.setUser_id(null);
         form.setOldUsername(oldUsername);
         form.setNewUsername(newUsername);
 
-        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
-        request.setBody(objectMapper.writeValueAsString(form));
+        APIGatewayProxyRequestEvent event = new APIGatewayProxyRequestEvent();
+        Map<String, String> claims = Map.of("sub", "11111111-2222-3333-4444-555555555555");
+        Map<String, Object> authorizer = new HashMap<>();
+        authorizer.put("claims", claims);
+
+        APIGatewayProxyRequestEvent.ProxyRequestContext rc = new APIGatewayProxyRequestEvent.ProxyRequestContext();
+        rc.setAuthorizer(authorizer);
+        event.setRequestContext(rc);
+
+        // Path param "s" since client calls /users/s
+        event.setPathParameters(Map.of("user_id", "s"));
+        event.setBody(objectMapper.writeValueAsString(form));
 
         Map<String, AttributeValue> userItem = Map.of("username", AttributeValue.fromS("real_name"));
         GetItemResponse getResponse = GetItemResponse.builder().item(userItem).build();
         when(dynamoDb.getItem(any(GetItemRequest.class))).thenReturn(getResponse);
 
-        APIGatewayProxyResponseEvent result = handler.handleRequest(request, context);
+        APIGatewayProxyResponseEvent result = handler.handleRequest(event, context);
 
         assertEquals(400, result.getStatusCode());
         ResponseMessage message = objectMapper.readValue(result.getBody(), ResponseMessage.class);
@@ -94,13 +116,22 @@ public class UpdateUsernameHandlerTest {
         form.setOldUsername("old");
         form.setNewUsername("new");
 
-        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
-        request.setBody(objectMapper.writeValueAsString(form));
+        APIGatewayProxyRequestEvent event = new APIGatewayProxyRequestEvent();
+        Map<String, String> claims = Map.of("sub", "11111111-2222-3333-4444-555555555555");
+        Map<String, Object> authorizer = new HashMap<>();
+        //authorizer.put("claims", claims);
 
-        APIGatewayProxyResponseEvent result = handler.handleRequest(request, context);
+        APIGatewayProxyRequestEvent.ProxyRequestContext rc = new APIGatewayProxyRequestEvent.ProxyRequestContext();
+        rc.setAuthorizer(authorizer);
+        event.setRequestContext(rc);
 
-        assertEquals(400, result.getStatusCode());
-        ResponseMessage message = objectMapper.readValue(result.getBody(), ResponseMessage.class);
-        assertEquals("sorry, there was an error processing your request", message.getMessage());
+        // Path param "s" since client calls /users/s
+        event.setPathParameters(Map.of("user_id", "s"));
+        event.setBody(objectMapper.writeValueAsString(form));
+
+        APIGatewayProxyResponseEvent result = handler.handleRequest(event, context);
+
+        assertEquals(401, result.getStatusCode());
+        assertTrue(result.getBody().contains("Unauthorized"));
     }
 }

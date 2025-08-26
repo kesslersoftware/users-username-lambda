@@ -7,6 +7,7 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 
 import com.boycottpro.models.ResponseMessage;
 import com.boycottpro.users.models.UserForm;
+import com.boycottpro.utilities.JwtUtility;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -32,46 +33,29 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         try {
+            String sub = JwtUtility.getSubFromRestEvent(event);
+            if (sub == null) return response(401, "Unauthorized");
             UserForm input = objectMapper.readValue(event.getBody(), UserForm.class);
-            String userId = input.getUser_id();
-            if (userId == null || userId.isEmpty()) {
-                ResponseMessage message = new ResponseMessage(400,
-                        "sorry, there was an error processing your request",
-                        "user_id not present");
-                String responseBody = objectMapper.writeValueAsString(message);
-                return new APIGatewayProxyResponseEvent()
-                        .withStatusCode(400)
-                        .withHeaders(Map.of("Content-Type", "application/json"))
-                        .withBody(responseBody);
-            }
-            if(!checkOldUsername(userId, input.getOldUsername())) {
+            input.setUser_id(sub);
+            if(!checkOldUsername(sub, input.getOldUsername())) {
                 ResponseMessage message = new ResponseMessage(400,
                         "sorry, there was an error processing your request",
                         "old username is not valid");
                 String responseBody = objectMapper.writeValueAsString(message);
-                return new APIGatewayProxyResponseEvent()
-                        .withStatusCode(400)
-                        .withHeaders(Map.of("Content-Type", "application/json"))
-                        .withBody(responseBody);
+                return response(400, responseBody);
             }
-            boolean success = changeUsername(userId,input.getNewUsername());
+            boolean success = changeUsername(sub,input.getNewUsername());
             if(success) {
                 ResponseMessage message = new ResponseMessage(200,"username successfully changed!",
                         "no issues changing username");
                 String responseBody = objectMapper.writeValueAsString(message);
-                return new APIGatewayProxyResponseEvent()
-                        .withStatusCode(200)
-                        .withHeaders(Map.of("Content-Type", "application/json"))
-                        .withBody(responseBody);
+                return response(200, responseBody);
             } else {
                 ResponseMessage message = new ResponseMessage(500,
                         "sorry, there was an error processing your request",
                         "unknown issue when trying to change username");
                 String responseBody = objectMapper.writeValueAsString(message);
-                return new APIGatewayProxyResponseEvent()
-                        .withStatusCode(500)
-                        .withHeaders(Map.of("Content-Type", "application/json"))
-                        .withBody(responseBody);
+                return response(500, responseBody);
             }
 
         } catch (Exception e) {
@@ -84,11 +68,15 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
             } catch (JsonProcessingException ex) {
                 throw new RuntimeException(ex);
             }
-            return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(500)
-                    .withHeaders(Map.of("Content-Type", "application/json"))
-                    .withBody(responseBody);
+            return response(500, responseBody);
         }
+    }
+
+    private APIGatewayProxyResponseEvent response(int status, String body) {
+        return new APIGatewayProxyResponseEvent()
+                .withStatusCode(status)
+                .withHeaders(Map.of("Content-Type", "application/json"))
+                .withBody(body);
     }
 
     private boolean changeUsername(String userId, String newUsername) {
