@@ -32,8 +32,9 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
 
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
+        String sub = null;
         try {
-            String sub = JwtUtility.getSubFromRestEvent(event);
+            sub = JwtUtility.getSubFromRestEvent(event);
             if (sub == null) return response(401, "Unauthorized");
             UserForm input = objectMapper.readValue(event.getBody(), UserForm.class);
             input.setUser_id(sub);
@@ -41,35 +42,41 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
                 ResponseMessage message = new ResponseMessage(400,
                         "sorry, there was an error processing your request",
                         "old username is not valid");
-                String responseBody = objectMapper.writeValueAsString(message);
-                return response(400, responseBody);
+                return response(400, message);
             }
             boolean success = changeUsername(sub,input.getNewUsername());
             if(success) {
                 ResponseMessage message = new ResponseMessage(200,"username successfully changed!",
                         "no issues changing username");
-                String responseBody = objectMapper.writeValueAsString(message);
-                return response(200, responseBody);
+                return response(200, message);
             } else {
+                System.out.println("unknown issue when trying to change username for user " + sub);
                 ResponseMessage message = new ResponseMessage(500,
                         "sorry, there was an error processing your request",
                         "unknown issue when trying to change username");
-                String responseBody = objectMapper.writeValueAsString(message);
-                return response(500, responseBody);
+                return response(500, message);
             }
 
         } catch (Exception e) {
+            System.out.println(e.getMessage() + " for user " + sub);
             ResponseMessage message = new ResponseMessage(500,
                     "sorry, there was an error processing your request",
                     "Unexpected server error: " + e.getMessage());
-            String responseBody = null;
-            try {
-                responseBody = objectMapper.writeValueAsString(message);
-            } catch (JsonProcessingException ex) {
-                throw new RuntimeException(ex);
-            }
-            return response(500, responseBody);
+            return response(500, message);
         }
+    }
+
+    private APIGatewayProxyResponseEvent response(int status, Object body) {
+        String responseBody = null;
+        try {
+            responseBody = objectMapper.writeValueAsString(body);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+        return new APIGatewayProxyResponseEvent()
+                .withStatusCode(status)
+                .withHeaders(Map.of("Content-Type", "application/json"))
+                .withBody(responseBody);
     }
 
     private APIGatewayProxyResponseEvent response(int status, String body) {
