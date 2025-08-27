@@ -35,7 +35,7 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
         String sub = null;
         try {
             sub = JwtUtility.getSubFromRestEvent(event);
-            if (sub == null) return response(401, "Unauthorized");
+            if (sub == null) return response(401, Map.of("message", "Unauthorized"));
             UserForm input = objectMapper.readValue(event.getBody(), UserForm.class);
             input.setUser_id(sub);
             if(!checkOldUsername(sub, input.getOldUsername())) {
