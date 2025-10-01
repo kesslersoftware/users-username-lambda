@@ -10,6 +10,11 @@ pipeline {
     }
     
     parameters {
+        choice(
+            name: 'ENV',
+            choices: ['dev', 'qa', 'ps', 'prod'],
+            description: 'Target environment for Lambda deployment'
+        )
         booleanParam(
             name: 'SKIP_TESTS',
             defaultValue: false,
@@ -19,6 +24,7 @@ pipeline {
 
     environment {
         LAMBDA_NAME = "${env.JOB_NAME.replace('-pipeline', '')}"
+        ENV = "${params.ENV}"
     }
     
     stages {
@@ -39,6 +45,7 @@ pipeline {
                     env.ARTIFACT_VERSION = "${env.GIT_COMMIT_SHORT}-${env.BUILD_NUMBER}-${env.BUILD_TIMESTAMP}"
 
                     echo "📝 Version components:"
+                    echo "   Environment: ${ENV}"
                     echo "   Git commit: ${env.GIT_COMMIT_SHORT}"
                     echo "   Build number: ${env.BUILD_NUMBER}"
                     echo "   Timestamp: ${env.BUILD_TIMESTAMP}"
@@ -46,16 +53,50 @@ pipeline {
                 }
             }
         }
+
         
         stage('Test') {
             when {
                 expression { !params.SKIP_TESTS }
             }
             steps {
+                script {
+                    // Create custom Maven settings for Docker networking
+                    writeFile file: 'custom-settings.xml', text: '''<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <mirrors>
+    <mirror>
+      <id>nexus-public</id>
+      <mirrorOf>*,!lambda-artifacts-${ENV}</mirrorOf>
+      <url>http://host.docker.internal:8096/repository/maven-public/</url>
+    </mirror>
+  </mirrors>
+  <servers>
+    <server>
+      <id>nexus-public</id>
+      <username>admin</username>
+      <password>admin123</password>
+    </server>
+    <server>
+      <id>lambda-artifacts-${ENV}</id>
+      <username>admin</username>
+      <password>admin123</password>
+    </server>
+  </servers>
+  <repositories>
+    <repository>
+      <id>lambda-artifacts-${ENV}</id>
+      <url>http://host.docker.internal:8096/repository/lambda-artifacts-${ENV}/</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>true</enabled></snapshots>
+    </repository>
+  </repositories>
+</settings>'''
+                }
                 sh '''
                     export JAVA_HOME="${TOOL_JDK_21}"
                     export PATH="$JAVA_HOME/bin:$PATH"
-                    mvn clean test
+                    mvn clean test -s custom-settings.xml
                 '''
             }
             post {
@@ -145,14 +186,14 @@ pipeline {
 <settings>
   <mirrors>
     <mirror>
-      <id>nexus-all</id>
-      <mirrorOf>*</mirrorOf>
+      <id>nexus-public</id>
+      <mirrorOf>*,!lambda-artifacts-${ENV}</mirrorOf>
       <url>http://host.docker.internal:8096/repository/maven-public/</url>
     </mirror>
   </mirrors>
   <servers>
     <server>
-      <id>nexus-all</id>
+      <id>nexus-public</id>
       <username>admin</username>
       <password>admin123</password>
     </server>
@@ -162,6 +203,14 @@ pipeline {
       <password>admin123</password>
     </server>
   </servers>
+  <repositories>
+    <repository>
+      <id>lambda-artifacts-${ENV}</id>
+      <url>http://host.docker.internal:8096/repository/lambda-artifacts-${ENV}/</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>true</enabled></snapshots>
+    </repository>
+  </repositories>
 </settings>'''
                 }
                 sh '''
@@ -191,13 +240,13 @@ pipeline {
         stage('Publish to Nexus') {
             steps {
                 script {
-                    echo "📦 Publishing Lambda JAR to Nexus artifact repository..."
+                    echo "📦 Publishing Lambda JAR to Nexus with dual versioning strategy..."
 
                     sh '''
                         export JAVA_HOME="${TOOL_JDK_21}"
                         export PATH="$JAVA_HOME/bin:$PATH"
 
-                        # Deploy to Nexus using Maven deploy plugin
+                        # 1. Deploy with traceability version (e.g., a1b2c3d-123-20250917-143022)
                         mvn deploy:deploy-file \
                             -Dfile=deployment/${LAMBDA_NAME}-${ARTIFACT_VERSION}.jar \
                             -DgroupId=com.boycottpro.lambda \
@@ -209,6 +258,23 @@ pipeline {
                             -s custom-settings.xml
 
                         echo "✅ Published ${LAMBDA_NAME}:${ARTIFACT_VERSION} to Nexus"
+
+                        # 2. Deploy with LATEST alias (overwrite previous LATEST)
+                        mvn deploy:deploy-file \
+                            -Dfile=deployment/${LAMBDA_NAME}-${ARTIFACT_VERSION}.jar \
+                            -DgroupId=com.boycottpro.lambda \
+                            -DartifactId=${LAMBDA_NAME} \
+                            -Dversion=LATEST \
+                            -Dpackaging=jar \
+                            -DrepositoryId=lambda-artifacts-${ENV} \
+                            -Durl=http://host.docker.internal:8096/repository/lambda-artifacts-${ENV}/ \
+                            -s custom-settings.xml
+
+                        echo "✅ Published ${LAMBDA_NAME}:LATEST alias to Nexus"
+
+                        echo "🎯 Dual versioning strategy complete:"
+                        echo "   Traceability: ${LAMBDA_NAME}:${ARTIFACT_VERSION}"
+                        echo "   Alias: ${LAMBDA_NAME}:LATEST"
                         echo "🔗 View at: http://localhost:8096/#browse/browse:lambda-artifacts-${ENV}"
                         echo "📍 Repository: lambda-artifacts-${ENV}"
                         echo "🔗 URL: http://localhost:8096/repository/lambda-artifacts-${ENV}/"
@@ -256,7 +322,7 @@ pipeline {
             emailext (
                 subject: "FAILED: Lambda Build - ${LAMBDA_NAME}",
                 body: "Lambda build failed for ${LAMBDA_NAME}. Check Jenkins for details.",
-                to: "dylan@kesslersoftware.com"
+                to: "contact+jenkins@kesslersoftware.com"
             )
         }
     }
