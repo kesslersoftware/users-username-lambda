@@ -8,6 +8,7 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import com.boycottpro.models.ResponseMessage;
 import com.boycottpro.users.models.UserForm;
 import com.boycottpro.utilities.JwtUtility;
+import com.boycottpro.utilities.Logger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -33,32 +34,31 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         String sub = null;
+        int lineNum = 37;
         try {
             sub = JwtUtility.getSubFromRestEvent(event);
-            if (sub == null) return response(401, Map.of("message", "Unauthorized"));
+            if (sub == null) {
+            Logger.error(40, sub, "user is Unauthorized");
+            return response(401, Map.of("message", "Unauthorized"));
+            }
+            lineNum = 43;
             UserForm input = objectMapper.readValue(event.getBody(), UserForm.class);
             input.setUser_id(sub);
             if(!checkOldUsername(sub, input.getOldUsername())) {
+                Logger.error(48, sub, "old username is not valid");
                 ResponseMessage message = new ResponseMessage(400,
                         "sorry, there was an error processing your request",
                         "old username is not valid");
                 return response(400, message);
             }
-            boolean success = changeUsername(sub,input.getNewUsername());
-            if(success) {
-                ResponseMessage message = new ResponseMessage(200,"username successfully changed!",
-                        "no issues changing username");
-                return response(200, message);
-            } else {
-                System.out.println("unknown issue when trying to change username for user " + sub);
-                ResponseMessage message = new ResponseMessage(500,
-                        "sorry, there was an error processing your request",
-                        "unknown issue when trying to change username");
-                return response(500, message);
-            }
-
+            lineNum = 54;
+            changeUsername(sub,input.getNewUsername());
+            ResponseMessage message = new ResponseMessage(200,"username successfully changed!",
+                    "no issues changing username");
+            lineNum = 58;
+            return response(200, message);
         } catch (Exception e) {
-            System.out.println(e.getMessage() + " for user " + sub);
+            Logger.error(lineNum, sub, e.getMessage());
             ResponseMessage message = new ResponseMessage(500,
                     "sorry, there was an error processing your request",
                     "Unexpected server error: " + e.getMessage());
@@ -79,13 +79,6 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
                 .withBody(responseBody);
     }
 
-    private APIGatewayProxyResponseEvent response(int status, String body) {
-        return new APIGatewayProxyResponseEvent()
-                .withStatusCode(status)
-                .withHeaders(Map.of("Content-Type", "application/json"))
-                .withBody(body);
-    }
-
     private boolean changeUsername(String userId, String newUsername) {
         UpdateItemRequest request = UpdateItemRequest.builder()
                 .tableName("users")
@@ -93,7 +86,6 @@ public class UpdateUsernameHandler implements RequestHandler<APIGatewayProxyRequ
                 .updateExpression("SET username = :new")
                 .expressionAttributeValues(Map.of(":new", AttributeValue.fromS(newUsername)))
                 .build();
-
         dynamoDb.updateItem(request);
         return true;
     }
